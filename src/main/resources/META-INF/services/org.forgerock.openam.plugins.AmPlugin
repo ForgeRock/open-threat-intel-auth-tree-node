@@ -1,0 +1,4 @@
+# simon.moffatt@forgerock.com
+# Used to register the node plugin
+
+org.forgerock.openam.auth.nodes.OpenThreatIntelligenceNodePlugin

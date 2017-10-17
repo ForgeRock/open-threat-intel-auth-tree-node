@@ -1,0 +1,4 @@
+org/forgerock/openam/auth/nodes/OpenThreatIntelligenceNodePlugin.class
+org/forgerock/openam/auth/nodes/OpenThreatIntelligenceNode$Config.class
+org/forgerock/openam/auth/nodes/OpenThreatIntelligenceNode$OutcomeProvider.class
+org/forgerock/openam/auth/nodes/OpenThreatIntelligenceNode.class
