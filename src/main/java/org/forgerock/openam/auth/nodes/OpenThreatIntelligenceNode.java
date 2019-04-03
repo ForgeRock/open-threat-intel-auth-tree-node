@@ -21,10 +21,11 @@
 
 package org.forgerock.openam.auth.nodes;
 
+import com.google.common.collect.ImmutableList;
 import com.google.inject.assistedinject.Assisted;
 import com.sun.identity.shared.debug.Debug;
-import org.forgerock.guava.common.collect.ImmutableList;
 import org.forgerock.json.JsonValue;
+import org.forgerock.openam.annotations.sm.Attribute;
 import org.forgerock.openam.auth.node.api.Action;
 import org.forgerock.openam.auth.node.api.Node;
 import org.forgerock.openam.auth.node.api.NodeProcessException;
@@ -44,7 +45,6 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
-import org.forgerock.json.JsonValue;
 import org.forgerock.openam.utils.JsonValueBuilder;
 
 
@@ -57,12 +57,37 @@ public class OpenThreatIntelligenceNode implements Node {
     private final static String FALSE_OUTCOME_ID = "false";
     private final static String DEBUG_FILE = "OpenThreatIntelligenceNode";
     protected Debug debug = Debug.getInstance(DEBUG_FILE);
+    private static final int MODE_IP_DIRECT = 0;
+    private static final int MODE_IP_PROXY = 1;
+    private static final int MODE_IP_SHARED_STATE = 2;
+    private int modeIP = MODE_IP_DIRECT;
+    private String proxyAttribute;
+    String currentIP;
+    String clientIPAsAString;
+
+    public enum ProxyMode {
+        DIRECT,
+        PROXY,
+        SHARED_STATE
+    }
 
     public interface Config {
+
+        //-- Proxy Mode - DIRECT or PROXY --
+        @Attribute(order = 300)
+        default ProxyMode proxyMode() { return ProxyMode.DIRECT; }
+
+        //-- Proxy Header --
+        @Attribute(order = 310)
+        default String proxyAttribute() {
+            return "x-forwarded-for";
+        }
 
     }
 
     private final Config config;
+
+
 
     /**
      * Create the node.
@@ -74,14 +99,25 @@ public class OpenThreatIntelligenceNode implements Node {
         this.config = config;
     }
 
+
+
+
     @Override
     public Action process(TreeContext context) throws NodeProcessException {
 
         debug.message("[" + DEBUG_FILE + "]: Started");
+        Action.ActionBuilder action;
+        JsonValue newState = context.sharedState.copy();
+        loadConfig();
+        setCurrentIP(context);
+        hashIP();
 
-        //Pull out clientIP
-	    String clientIP = context.request.clientIp;
-        debug.message("[" + DEBUG_FILE + "]: client IP found as :" + clientIP);
+        //Call helper function to see if IP hash is known
+        return isIPMalicious(clientIPAsAString);
+
+    }
+
+    private void hashIP() {
 
         //Create sha256 hash of the IP....
         MessageDigest digest = null;
@@ -90,7 +126,7 @@ public class OpenThreatIntelligenceNode implements Node {
         } catch (NoSuchAlgorithmException e) {
             e.printStackTrace();
         }
-        byte[] clientIPHash = digest.digest(clientIP.getBytes(StandardCharsets.UTF_8));
+        byte[] clientIPHash = digest.digest(currentIP.getBytes(StandardCharsets.UTF_8));
         StringBuffer hexString = new StringBuffer();
 
         for (int i = 0; i < clientIPHash.length; i++) {
@@ -99,14 +135,9 @@ public class OpenThreatIntelligenceNode implements Node {
             hexString.append(hex);
         }
 
-        String clientIPAsAString = hexString.toString();
+        clientIPAsAString = hexString.toString();
 
         debug.message("[" + DEBUG_FILE + "]: sha256 hash of client IP created as :" + clientIPAsAString);
-
-        //Call helper function to see if IP hash is known
-        return isIPMalicious(clientIPAsAString);
-
-
     }
 
     private Action isIPMalicious(String ipHash) {
@@ -174,8 +205,86 @@ public class OpenThreatIntelligenceNode implements Node {
     }
 
 
+
     private Action.ActionBuilder goTo(boolean outcome) {
         return Action.goTo(outcome ? TRUE_OUTCOME_ID : FALSE_OUTCOME_ID);
+
+    }
+
+    private void loadConfig() {
+        ProxyMode proxyMode = config.proxyMode();
+        debug.message("[" + DEBUG_FILE + "]: GeoLocationNode::process().proxyMode : " + proxyMode);
+        switch (proxyMode) {
+            case DIRECT:
+                debug.message("[" + DEBUG_FILE + "]: modeIP is set to MODE_IP_DIRECT");
+                modeIP = MODE_IP_DIRECT;
+                break;
+            case PROXY:
+                debug.message("[" + DEBUG_FILE + "]: modeIP is set to MODE_CHECK");
+                modeIP = MODE_IP_PROXY;
+                break;
+            case SHARED_STATE:
+                debug.message("[" + DEBUG_FILE + "]: modeIP is set to MODE_SHARED_STATE");
+                modeIP = MODE_IP_SHARED_STATE;
+                break;
+            default:
+                debug.message("[" + DEBUG_FILE + "]: modeIP not specified - default MODE_IP_DIRECT is used");
+                modeIP = MODE_IP_DIRECT;
+                break;
+        }
+        proxyAttribute = config.proxyAttribute();
+        debug.message("[" + DEBUG_FILE + "]: proxyAttribute : " + proxyAttribute);
+
+    }
+
+    public String parseIP (String ip) {
+        if (ip.substring(0,1).equals("[")) {
+            return ip.substring(1,ip.length()-1);
+        } else {
+            return ip;
+        }
+    }
+    private void setCurrentIP(TreeContext context)  {
+        try {
+            switch (modeIP) {
+                case MODE_IP_DIRECT:
+                    currentIP = parseIP(context.request.clientIp.toString());
+                    if (currentIP.substring(currentIP.length()).equals("]")) currentIP = currentIP.substring(1,currentIP.length()-1);
+                    debug.message("[" + DEBUG_FILE + "]: currentIP().IP : " + currentIP);
+                    break;
+                case MODE_IP_PROXY:
+                    if (proxyAttribute.length() > 0) {
+                        currentIP = parseIP(context.request.headers.get(proxyAttribute).toString());
+                        debug.message("[" + DEBUG_FILE + "]: currentIP().IP : " + currentIP);
+                    } else {
+                        debug.error("[" + DEBUG_FILE + "]: The header name must be specified if node is configured in proxy mode.");
+                    }
+                    break;
+                case MODE_IP_SHARED_STATE:
+                    if (proxyAttribute.length() > 0) {
+                        String stringIP;
+                        stringIP = parseIP(context.sharedState.get(proxyAttribute).asString());
+                        if (stringIP.startsWith("\"")) {
+                            stringIP = stringIP.substring(1, stringIP.length());
+                        }
+                        if (stringIP.endsWith("\"")) {
+                            stringIP = stringIP.substring(0, stringIP.length() - 1);
+                        }
+
+                        //currentIP = parseIP(context.sharedState.get(proxyAttribute).asString()) + "::" + Instant.now().toString();
+                        currentIP = stringIP;
+                        debug.message("[" + DEBUG_FILE + "]: SHARED STATE CURRENT IP:" + currentIP);
+
+                        debug.message("[" + DEBUG_FILE + "]: setCurrentIP().IP : " + currentIP);
+                    } else {
+                        debug.message("[" + DEBUG_FILE + "]: The shared state attribute name must be specified if node is configured in shared state mode.");
+                    }
+                    break;
+            }
+
+        } catch (Exception e) {
+            debug.error("[" + DEBUG_FILE + "]: The current IP could not be saved.");
+        }
     }
 
     static final class OutcomeProvider implements org.forgerock.openam.auth.node.api.OutcomeProvider {

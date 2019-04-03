@@ -14,21 +14,6 @@
 # Copyright 2017 ForgeRock AS.
 #
 # simon.moffatt@forgerock.com
-# Labels for the UI
+# Used to register the node plugin
 
-#Description
-nodeDescription=Open Threat Intelligence
-
-#Properties
-properties.help=Integrates with the https://cymon.io, Open Threat Intelligence API to verify client IP address against 6 million IP entries.
-
-
-#Outcomes
-true=Malicious
-false=Non-Malicious
-
-proxyMode.DIRECT=Direct
-proxyMode.SHARED_STATE=Shared State
-proxyMode.help=Direct, Proxy (header value), or Shared State
-proxyAttribute=Proxy Attribute
-proxyAttribute.help=Header or shared state attribute which contains the client IP.  Only applicable if PROXY or SHARED_STATE mode.
+org.forgerock.openam.auth.nodes.OpenThreatIntelligenceNodePlugin
