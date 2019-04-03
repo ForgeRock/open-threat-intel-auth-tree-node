@@ -1,6 +1,0 @@
-org/forgerock/openam/auth/nodes/OpenThreatIntelligenceNodePlugin.class
-org/forgerock/openam/auth/nodes/OpenThreatIntelligenceNode$Config.class
-org/forgerock/openam/auth/nodes/OpenThreatIntelligenceNode$OutcomeProvider.class
-org/forgerock/openam/auth/nodes/OpenThreatIntelligenceNode.class
-org/forgerock/openam/auth/nodes/OpenThreatIntelligenceNode$1.class
-org/forgerock/openam/auth/nodes/OpenThreatIntelligenceNode$ProxyMode.class
